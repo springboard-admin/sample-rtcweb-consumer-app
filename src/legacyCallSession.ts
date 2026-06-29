@@ -66,12 +66,18 @@ export async function openLegacySession(opts: {
 export async function closeLegacySession(opts: { roomId: string; myRole: string; joinedAtMs: number | null }) {
   const now = new Date();
   const leftCol = opts.myRole === "mentor" ? "mentor_left_at" : "student_left_at";
+  const duration = opts.joinedAtMs ? Math.round((now.getTime() - opts.joinedAtMs) / 1000) : 0;
+  // together_seconds MUST be > 0 so prod's "reopen recently-ended empty session"
+  // churn guard treats this as a real, distinct call and does NOT reopen/adopt
+  // it (which would merge a later prod call into this call_id). See the canary
+  // README for why. Approximated from our own joined→now duration.
   await supabase
     .from("call_sessions")
     .update({
       ended_at: now.toISOString(),
       [leftCol]: now.toISOString(),
-      duration_seconds: opts.joinedAtMs ? Math.round((now.getTime() - opts.joinedAtMs) / 1000) : 0,
+      duration_seconds: duration,
+      together_seconds: Math.max(1, duration),
     } as any)
     .eq("id", opts.roomId);
 }
